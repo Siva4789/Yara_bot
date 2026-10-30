@@ -25,7 +25,7 @@ function setupTelegramBot() {
   bot.use(async (ctx, next) => {
     const fromId = ctx.from && ctx.from.id ? ctx.from.id.toString() : '';
     if (allowedUser && fromId !== allowedUser.toString()) {
-      return ctx.reply('â›” Unauthorized. This bot is locked to its owner.');
+      return ctx.reply(' Unauthorized. This bot is locked to its owner.');
     }
     return next();
   });
@@ -47,7 +47,7 @@ function setupTelegramBot() {
       isGitHub = true;
       projectPath = path.join(CLOUD_WORKSPACE_DIR, name);
 
-      ctx.reply(`â³ Cloning repository from GitHub...\nðŸ”— ${target}\nðŸ“ Setting up cloud workspace...`);
+      ctx.reply(` Cloning repository from GitHub...\nðŸ”— ${target}\nðŸ“ Setting up cloud workspace...`);
 
       try {
         if (fs.existsSync(projectPath)) {
@@ -56,11 +56,11 @@ function setupTelegramBot() {
           await simpleGit().clone(target, projectPath);
         }
       } catch (err) {
-        return ctx.reply(`âš ï¸ Failed to clone repository from GitHub:\n${err.message}`);
+        return ctx.reply(` ï¸ Failed to clone repository from GitHub:\n${err.message}`);
       }
     } else {
       if (!fs.existsSync(projectPath)) {
-        return ctx.reply(`âš ï¸ Local folder does not exist:\n${projectPath}`);
+        return ctx.reply(` ï¸ Local folder does not exist:\n${projectPath}`);
       }
     }
 
@@ -72,7 +72,7 @@ function setupTelegramBot() {
       tech_stack: 'auto'
     });
 
-    ctx.reply(`âœ… Project Connected! ðŸŽ‰\n\nðŸ“Œ Name: ${name}\nðŸ“ Workspace: ${projectPath}${isGitHub ? '\nðŸ™ Source: GitHub Repository' : ''}\n\nYou can now send tasks using:\n/task ${name} your instruction`);
+    ctx.reply(` Project Connected! ðŸŽ‰\n\nðŸ“Œ Name: ${name}\nðŸ“ Workspace: ${projectPath}${isGitHub ? '\nðŸ™ Source: GitHub Repository' : ''}\n\nYou can now send tasks using:\n/task ${name} your instruction`);
   });
 
   bot.command('start', async (ctx) => {
@@ -108,9 +108,9 @@ function setupTelegramBot() {
     const projects = db.getProjects();
     const project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase() || p.id === projectName.toLowerCase());
 
-    if (!project) return ctx.reply(`âŒ Project "${projectName}" not found. Use /projects to list all.`);
+    if (!project) return ctx.reply(` Project "${projectName}" not found. Use /projects to list all.`);
 
-    ctx.reply(`âš¡ Analyzing task for ${project.name}...\nðŸ“ "${prompt}"`);
+    ctx.reply(` Analyzing task for ${project.name}...\nðŸ“ "${prompt}"`);
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -131,11 +131,11 @@ Provide a concise technical plan. What files should be created or edited?`;
       pendingPlans[project.id] = { project, prompt, plan };
 
       ctx.reply(`ðŸ“‹ AI Developer Plan:\n\n${plan.slice(0, 3000)}`, Markup.inlineKeyboard([
-        [Markup.button.callback('âš¡ Execute & Write Code Now', `exec_${project.id}`)],
-        [Markup.button.callback('âŒ Discard', 'cancel')]
+        [Markup.button.callback(' Execute & Write Code Now', `exec_${project.id}`)],
+        [Markup.button.callback(' Discard', 'cancel')]
       ]));
     } catch (err) {
-      ctx.reply(`âš ï¸ Error: ${err.message}`);
+      ctx.reply(` ï¸ Error: ${err.message}`);
     }
   });
 
@@ -143,12 +143,12 @@ Provide a concise technical plan. What files should be created or edited?`;
     const action = ctx.callbackQuery.data;
     await ctx.answerCbQuery();
 
-    if (action === 'cancel') return ctx.reply('âŒ Task cancelled.');
+    if (action === 'cancel') return ctx.reply(' Task cancelled.');
 
     if (action.startsWith('exec_')) {
       const projectId = action.replace('exec_', '');
       const taskData = pendingPlans[projectId];
-      if (!taskData) return ctx.reply('âš ï¸ No pending task found.');
+      if (!taskData) return ctx.reply(' ï¸ No pending task found.');
 
       const { project, prompt, plan } = taskData;
       ctx.reply(`ðŸš€ Reading existing files and applying changes safely to ${project.name}...`);
@@ -193,7 +193,7 @@ CRITICAL RULES:
   "summary": "Brief explanation of what was added"
 }`;
 
-        ctx.reply('âœï¸ Writing updated code to files...');
+        ctx.reply(' Writing updated code to files...');
         const result = await model.generateContent(editPrompt);
         let rawText = result.response.text().trim();
 
@@ -224,18 +224,18 @@ CRITICAL RULES:
               await git.push(authUrl, 'main');
               ctx.reply('ðŸš€ Successfully pushed to GitHub! Netlify is auto-deploying your live site.');
             } catch (gitErr) {
-              ctx.reply(`âš ï¸ Git push note: ${gitErr.message}`);
+              ctx.reply(` ï¸ Git push note: ${gitErr.message}`);
             }
           }
 
           ctx.reply(`ðŸŽ‰ Changes successfully applied!\n\nðŸ“„ File: ${change.filepath}\nðŸ“ Summary: ${change.summary || 'Updated'}\n\nðŸŒ Netlify Live URL:\nhttps://stately-twilight-6dba65.netlify.app/`);
         } else {
-          ctx.reply('âš ï¸ Could not parse code output.');
+          ctx.reply(' ï¸ Could not parse code output.');
         }
 
         delete pendingPlans[projectId];
       } catch (err) {
-        ctx.reply(`âš ï¸ Execution error: ${err.message}`);
+        ctx.reply(` ï¸ Execution error: ${err.message}`);
       }
     }
   });
@@ -247,3 +247,4 @@ CRITICAL RULES:
 }
 
 module.exports = { setupTelegramBot };
+
