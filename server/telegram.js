@@ -1,11 +1,18 @@
 const { Telegraf, Markup } = require('telegraf');
 const fs = require('fs');
+const path = require('path');
+const simpleGit = require('simple-git');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('./db');
 const { createAgentTools } = require('./tools');
 const { startCloudflareTunnel } = require('./tunnel');
 
 const pendingPlans = {};
+const CLOUD_WORKSPACE_DIR = path.join(process.cwd(), 'workspaces');
+
+if (!fs.existsSync(CLOUD_WORKSPACE_DIR)) {
+  fs.mkdirSync(CLOUD_WORKSPACE_DIR, { recursive: true });
+}
 
 function setupTelegramBot() {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -23,42 +30,73 @@ function setupTelegramBot() {
     return next();
   });
 
+  // /addproject: Supports BOTH Local Folders AND GitHub Clone URLs!
   bot.command('addproject', async (ctx) => {
     const text = ctx.message.text.replace('/addproject', '').trim();
     if (!text) {
-      return ctx.reply('Usage: /addproject <name> <folder_path>');
+      return ctx.reply('Usage: /addproject <name> <folder_path_or_github_url>\n\nExample:\n/addproject portfolio https://github.com/Siva4789/portfolionew.git');
     }
+
     const parts = text.split(' ');
     const name = parts[0];
-    const projectPath = parts.slice(1).join(' ').trim();
+    const target = parts.slice(1).join(' ').trim();
 
-    if (!fs.existsSync(projectPath)) {
-      return ctx.reply(`⚠️ Folder path does not exist on your laptop:\n\`${projectPath}\``, { parse_mode: 'Markdown' });
+    let projectPath = target;
+    let isGitHub = false;
+
+    // If it is a GitHub URL, automatically clone it into the cloud workspace!
+    if (target.startsWith('http://') || target.startsWith('https://')) {
+      isGitHub = true;
+      projectPath = path.join(CLOUD_WORKSPACE_DIR, name);
+
+      ctx.reply(`⏳ Cloning repository from GitHub...\n🔗 ${target}\n📁 Setting up cloud workspace...`);
+
+      try {
+        if (fs.existsSync(projectPath)) {
+          await simpleGit(projectPath).pull();
+        } else {
+          await simpleGit().clone(target, projectPath);
+        }
+      } catch (err) {
+        return ctx.reply(`⚠️ Failed to clone repository from GitHub:\n${err.message}`);
+      }
+    } else {
+      if (!fs.existsSync(projectPath)) {
+        return ctx.reply(`⚠️ Local folder does not exist:\n${projectPath}`);
+      }
     }
 
     db.addProject({
       id: name.toLowerCase().replace(/\s+/g, '-'),
       name: name,
       path: projectPath,
+      git_url: isGitHub ? target : null,
       tech_stack: 'auto'
     });
 
-    ctx.reply(`✅ *Project Connected!* 🎉\n📌 Name: \`${name}\`\n📁 Path: \`${projectPath}\``, { parse_mode: 'Markdown' });
+    ctx.reply(`✅ Project Connected! 🎉\n\n📌 Name: ${name}\n📁 Workspace: ${projectPath}${isGitHub ? '\n🐙 Source: GitHub Repository' : ''}\n\nYou can now send tasks using:\n/task ${name} your instruction`);
   });
 
   bot.command('start', async (ctx) => {
     const projects = db.getProjects();
-    let msg = `👋 Welcome to your *Personal AI Developer*!\n\n`;
+    let msg = `👋 Welcome to your Personal AI Developer!\n\n`;
     if (projects.length === 0) {
-      msg += `📁 No projects connected yet.\nUse \`/addproject <name> <path>\` to connect.`;
+      msg += `📁 No projects connected yet.\nUse /addproject <name> <path_or_github_url> to connect.`;
     } else {
-      msg += `📁 *Connected Projects:*\n`;
+      msg += `📁 Connected Projects:\n`;
       projects.forEach((p, idx) => {
-        msg += `${idx + 1}. \`${p.name}\` (${p.path})\n`;
+        msg += `${idx + 1}. ${p.name} (${p.path})\n`;
       });
-      msg += `\nSend: \`/task <project_name> <instruction>\` to work on code!`;
+      msg += `\nSend: /task <project_name> <instruction> to start developing!`;
     }
-    ctx.replyWithMarkdown(msg);
+    ctx.reply(msg);
+  });
+
+  bot.command('projects', async (ctx) => {
+    const projects = db.getProjects();
+    if (projects.length === 0) return ctx.reply('No projects connected yet.');
+    const buttons = projects.map(p => [Markup.button.callback(`📂 ${p.name}`, `select_${p.id}`)]);
+    ctx.reply('Select a project to work on:', Markup.inlineKeyboard(buttons));
   });
 
   bot.command('task', async (ctx) => {
@@ -72,9 +110,9 @@ function setupTelegramBot() {
     const projects = db.getProjects();
     const project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase() || p.id === projectName.toLowerCase());
 
-    if (!project) return ctx.reply(`❌ Project "${projectName}" not found.`);
+    if (!project) return ctx.reply(`❌ Project "${projectName}" not found. Use /projects to list all.`);
 
-    ctx.reply(`⚡ Analyzing task for \`${project.name}\`...\n📝 "${prompt}"`, { parse_mode: 'Markdown' });
+    ctx.reply(`⚡ Analyzing task for ${project.name}...\n📝 "${prompt}"`);
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -115,41 +153,49 @@ Provide a concise technical plan. What files should be created or edited?`;
       if (!taskData) return ctx.reply('⚠️ No pending task found.');
 
       const { project, prompt, plan } = taskData;
-      ctx.reply(`🚀 Reading existing files and applying changes safely to \`${project.name}\`...`, { parse_mode: 'Markdown' });
+      ctx.reply(`🚀 Reading existing files and applying changes safely to ${project.name}...`);
 
       try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
         const model = genAI.getGenerativeModel({ model: 'gemini-3.5-flash-lite' });
         const tools = createAgentTools(project.path);
 
-        // Find primary file to edit
+        const rootFiles = await tools.listFiles({});
+        let targetFile = 'index.html';
+        
+        const subfolder = rootFiles.find(f => f.isDirectory && f.name.includes('portfolio'));
+        if (subfolder) {
+          targetFile = `${subfolder.name}/index.html`;
+        } else if (fs.existsSync(path.join(project.path, 'public', 'index.html'))) {
+          targetFile = 'public/index.html';
+        }
+
         let existingContent = '';
-        let targetFile = 'public/index.html';
         try {
           existingContent = await tools.readFile({ filepath: targetFile });
         } catch (e) {
           existingContent = '';
         }
 
-        const editPrompt = `You are a careful software developer modifying existing code.
-File: "${targetFile}"
+        const editPrompt = `You are an expert web developer modifying an existing project.
+File to edit: "${targetFile}"
 Existing code:
-${existingContent}
+${existingContent.slice(0, 7000)}
 
 User Request: "${prompt}"
 
 CRITICAL RULES:
-1. PRESERVE all existing layouts, Tailwind styling, buttons, feeds, and JavaScript logic.
-2. DO NOT delete or replace the existing UI with an empty or minimal skeleton.
-3. Integrate the requested feature seamlessly into the existing file.
+1. PRESERVE all existing HTML structure, CSS styles, scripts, and content.
+2. DO NOT delete anything from the user's existing portfolio.
+3. Add the requested feature seamlessly with appropriate CSS/JS.
 4. Return ONLY valid JSON:
 {
   "filepath": "${targetFile}",
-  "content": "THE COMPLETE UPDATED CODE PRESERVING EXISTING FEATURES",
-  "summary": "What was added/changed"
+  "content": "THE ENTIRE UPDATED FILE INCLUDING THE NEW FEATURE",
+  "summary": "Brief explanation of what was added"
 }`;
 
-        ctx.reply('✍️ Writing updated code...');
+        ctx.reply('✍️ Writing updated code to files...');
         const result = await model.generateContent(editPrompt);
         let rawText = result.response.text().trim();
 
@@ -163,14 +209,9 @@ CRITICAL RULES:
         if (change.filepath && change.content) {
           await tools.writeFile({ filepath: change.filepath, content: change.content });
 
-          ctx.reply('🚀 Generating secure Cloudflare live preview link for your phone...');
-          const previewUrl = await startCloudflareTunnel(4005);
-
-          ctx.reply(`🎉 Changes successfully applied!\n\n📄 File: ${change.filepath}\n📝 Summary: ${change.summary || 'Updated'}\n\n🌐 Live Mobile Preview:\n${previewUrl}`, Markup.inlineKeyboard([
-            [Markup.button.url('🌐 Open Live App on Phone (Anywhere)', previewUrl)]
-          ]));
+          ctx.reply(`🎉 Changes successfully applied!\n\n📄 File: ${change.filepath}\n📝 Summary: ${change.summary || 'Updated'}\n\n🌐 Netlify Live URL:\nhttps://stately-twilight-6dba65.netlify.app/`);
         } else {
-          ctx.reply('⚠️ Could not parse code update.');
+          ctx.reply('⚠️ Could not parse code output.');
         }
 
         delete pendingPlans[projectId];
@@ -180,7 +221,9 @@ CRITICAL RULES:
     }
   });
 
-  bot.launch().catch(e => console.error(e));
+  if (!process.env.RENDER) {
+    bot.launch().catch(e => console.error(e));
+  }
   return bot;
 }
 
