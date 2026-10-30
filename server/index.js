@@ -1,3 +1,5 @@
+process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection at:', promise, 'reason:', reason); });
+process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
@@ -52,10 +54,11 @@ server.listen(PORT, async () => {
   console.log(`[Platform Ready] Open http://localhost:${PORT} on your browser or mobile.`);
   
   // Initialize Telegram Bot
-  const bot = setupTelegramBot();
+  const bot = try { setupTelegramBot(); } catch (e) { console.error('Telegram bot init error:', e.message); }
   if (bot) {
     // Mount webhook handler
     app.use(bot.webhookCallback('/telegram-webhook'));
     console.log('[Telegram Webhook] Listening on /telegram-webhook');
   }
 });
+
