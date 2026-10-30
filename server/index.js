@@ -55,7 +55,7 @@ server.listen(PORT, async () => {
   const bot = setupTelegramBot();
   if (bot) {
     // Mount webhook handler
-    app.use('/telegram-webhook', bot.webhookCallback('/telegram-webhook'));
+    app.use(bot.webhookCallback('/telegram-webhook'));
     console.log('[Telegram Webhook] Listening on /telegram-webhook');
   }
 });
