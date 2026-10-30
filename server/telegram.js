@@ -21,7 +21,9 @@ function setupTelegramBot() {
 
   const https = require('https');
   const agent = new https.Agent({ keepAlive: true, timeout: 60000 });
-  const bot = new Telegraf(token, { telegram: { agent }, handlerTimeout: 900000 });
+  const bot = new Telegraf(token, { telegram: { agent, apiRoot: 'https://api.telegram.org' }, handlerTimeout: 900000 });
+  // Catch Telegraf errors
+  bot.catch((err, ctx) => { console.error('Telegraf Error:', err.message); });
 
   bot.use(async (ctx, next) => {
     const fromId = ctx.from && ctx.from.id ? ctx.from.id.toString() : '';
