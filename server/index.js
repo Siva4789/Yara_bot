@@ -103,5 +103,9 @@ wss.on('connection', (ws) => {
 const PORT = process.env.PORT || 4000;
 server.listen(PORT, () => {
   console.log(`[Platform Ready] Open http://localhost:${PORT} on your browser or mobile.`);
-  setupTelegramBot();
+  const bot = setupTelegramBot();
+  if (bot) {
+    app.use(bot.webhookCallback('/telegram-webhook'));
+    console.log('[Telegram Webhook] Listening on /telegram-webhook');
+  }
 });
