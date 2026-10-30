@@ -20,7 +20,7 @@ function setupTelegramBot() {
 
   if (!token) return null;
 
-  const bot = new Telegraf(token);
+  const bot = new Telegraf(token, { handlerTimeout: 900000 });
 
   bot.use(async (ctx, next) => {
     const fromId = ctx.from && ctx.from.id ? ctx.from.id.toString() : '';
