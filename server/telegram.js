@@ -5,7 +5,6 @@ const simpleGit = require('simple-git');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('./db');
 const { createAgentTools } = require('./tools');
-const { startCloudflareTunnel } = require('./tunnel');
 
 const pendingPlans = {};
 const CLOUD_WORKSPACE_DIR = path.join(process.cwd(), 'workspaces');
@@ -25,7 +24,7 @@ function setupTelegramBot() {
   bot.use(async (ctx, next) => {
     const fromId = ctx.from && ctx.from.id ? ctx.from.id.toString() : '';
     if (allowedUser && fromId !== allowedUser.toString()) {
-      return ctx.reply(' Unauthorized. This bot is locked to its owner.');
+      return ctx.reply('Unauthorized. This bot is locked to its owner.');
     }
     return next();
   });
@@ -47,7 +46,7 @@ function setupTelegramBot() {
       isGitHub = true;
       projectPath = path.join(CLOUD_WORKSPACE_DIR, name);
 
-      ctx.reply(` Cloning repository from GitHub...\nðŸ”— ${target}\nðŸ“ Setting up cloud workspace...`);
+      ctx.reply(`Fetching repository from GitHub: ${target}`);
 
       try {
         if (fs.existsSync(projectPath)) {
@@ -56,11 +55,11 @@ function setupTelegramBot() {
           await simpleGit().clone(target, projectPath);
         }
       } catch (err) {
-        return ctx.reply(` ï¸ Failed to clone repository from GitHub:\n${err.message}`);
+        return ctx.reply(`Failed to clone repository from GitHub:\n${err.message}`);
       }
     } else {
       if (!fs.existsSync(projectPath)) {
-        return ctx.reply(` ï¸ Local folder does not exist:\n${projectPath}`);
+        return ctx.reply(`Local folder does not exist:\n${projectPath}`);
       }
     }
 
@@ -72,16 +71,16 @@ function setupTelegramBot() {
       tech_stack: 'auto'
     });
 
-    ctx.reply(` Project Connected! ðŸŽ‰\n\nðŸ“Œ Name: ${name}\nðŸ“ Workspace: ${projectPath}${isGitHub ? '\nðŸ™ Source: GitHub Repository' : ''}\n\nYou can now send tasks using:\n/task ${name} your instruction`);
+    ctx.reply(`Project Connected!\n\nName: ${name}\nWorkspace: ${projectPath}${isGitHub ? '\nSource: GitHub Repository' : ''}\n\nYou can now send tasks using:\n/task ${name} your instruction`);
   });
 
   bot.command('start', async (ctx) => {
     const projects = db.getProjects();
-    let msg = `ðŸ‘‹ Welcome to your Personal AI Developer!\n\n`;
+    let msg = `Welcome to your Personal AI Developer!\n\n`;
     if (projects.length === 0) {
-      msg += `ðŸ“ No projects connected yet.\nUse /addproject <name> <path_or_github_url> to connect.`;
+      msg += `No projects connected yet.\nUse /addproject <name> <path_or_github_url> to connect.`;
     } else {
-      msg += `ðŸ“ Connected Projects:\n`;
+      msg += `Connected Projects:\n`;
       projects.forEach((p, idx) => {
         msg += `${idx + 1}. ${p.name} (${p.path})\n`;
       });
@@ -93,7 +92,7 @@ function setupTelegramBot() {
   bot.command('projects', async (ctx) => {
     const projects = db.getProjects();
     if (projects.length === 0) return ctx.reply('No projects connected yet.');
-    const buttons = projects.map(p => [Markup.button.callback(`ðŸ“‚ ${p.name}`, `select_${p.id}`)]);
+    const buttons = projects.map(p => [Markup.button.callback(`${p.name}`, `select_${p.id}`)]);
     ctx.reply('Select a project to work on:', Markup.inlineKeyboard(buttons));
   });
 
@@ -108,9 +107,9 @@ function setupTelegramBot() {
     const projects = db.getProjects();
     const project = projects.find(p => p.name.toLowerCase() === projectName.toLowerCase() || p.id === projectName.toLowerCase());
 
-    if (!project) return ctx.reply(` Project "${projectName}" not found. Use /projects to list all.`);
+    if (!project) return ctx.reply(`Project "${projectName}" not found. Use /projects to list all.`);
 
-    ctx.reply(` Analyzing task for ${project.name}...\nðŸ“ "${prompt}"`);
+    ctx.reply(`Analyzing task for ${project.name}...\nInstruction: "${prompt}"`);
 
     try {
       const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -130,12 +129,12 @@ Provide a concise technical plan. What files should be created or edited?`;
 
       pendingPlans[project.id] = { project, prompt, plan };
 
-      ctx.reply(`ðŸ“‹ AI Developer Plan:\n\n${plan.slice(0, 3000)}`, Markup.inlineKeyboard([
-        [Markup.button.callback(' Execute & Write Code Now', `exec_${project.id}`)],
-        [Markup.button.callback(' Discard', 'cancel')]
+      ctx.reply(`AI Developer Plan:\n\n${plan.slice(0, 3000)}`, Markup.inlineKeyboard([
+        [Markup.button.callback('Execute & Write Code Now', `exec_${project.id}`)],
+        [Markup.button.callback('Discard', 'cancel')]
       ]));
     } catch (err) {
-      ctx.reply(` ï¸ Error: ${err.message}`);
+      ctx.reply(`Error: ${err.message}`);
     }
   });
 
@@ -143,15 +142,15 @@ Provide a concise technical plan. What files should be created or edited?`;
     const action = ctx.callbackQuery.data;
     await ctx.answerCbQuery();
 
-    if (action === 'cancel') return ctx.reply(' Task cancelled.');
+    if (action === 'cancel') return ctx.reply('Task cancelled.');
 
     if (action.startsWith('exec_')) {
       const projectId = action.replace('exec_', '');
       const taskData = pendingPlans[projectId];
-      if (!taskData) return ctx.reply(' ï¸ No pending task found.');
+      if (!taskData) return ctx.reply('No pending task found.');
 
       const { project, prompt, plan } = taskData;
-      ctx.reply(`ðŸš€ Reading existing files and applying changes safely to ${project.name}...`);
+      ctx.reply(`Reading files and applying changes safely to ${project.name}...`);
 
       try {
         const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -193,7 +192,7 @@ CRITICAL RULES:
   "summary": "Brief explanation of what was added"
 }`;
 
-        ctx.reply(' Writing updated code to files...');
+        ctx.reply('Generating updated code...');
         const result = await model.generateContent(editPrompt);
         let rawText = result.response.text().trim();
 
@@ -210,7 +209,7 @@ CRITICAL RULES:
           // Authenticated push directly using Classic Token!
           const ghToken = process.env.GITHUB_TOKEN;
           if (project.git_url && ghToken) {
-            ctx.reply('ðŸ“¤ Pushing changes to GitHub so Netlify redeploys live...');
+            ctx.reply('Pushing changes to GitHub...');
             try {
               const git = simpleGit(project.path);
               await git.addConfig('user.name', 'Siva4789');
@@ -218,33 +217,28 @@ CRITICAL RULES:
               await git.add('.');
               await git.commit('Update from AI Developer: ' + (change.summary || 'Feature update'));
 
-              // Inject token into git push URL
               const cleanUrl = project.git_url.replace('https://', '');
               const authUrl = `https://${ghToken}@${cleanUrl}`;
               await git.push(authUrl, 'main');
-              ctx.reply('ðŸš€ Successfully pushed to GitHub! Netlify is auto-deploying your live site.');
+              ctx.reply('Successfully pushed to GitHub! Hosting is auto-deploying your live site.');
             } catch (gitErr) {
-              ctx.reply(` ï¸ Git push note: ${gitErr.message}`);
+              ctx.reply(`Git Note: ${gitErr.message}`);
             }
           }
 
-          ctx.reply(`ðŸŽ‰ Changes successfully applied!\n\nðŸ“„ File: ${change.filepath}\nðŸ“ Summary: ${change.summary || 'Updated'}\n\nðŸŒ Netlify Live URL:\nhttps://stately-twilight-6dba65.netlify.app/`);
+          ctx.reply(`Changes successfully applied!\n\nFile: ${change.filepath}\nSummary: ${change.summary || 'Updated'}\n\nLive site will update in ~15 seconds!`);
         } else {
-          ctx.reply(' ï¸ Could not parse code output.');
+          ctx.reply('Could not parse code output.');
         }
 
         delete pendingPlans[projectId];
       } catch (err) {
-        ctx.reply(` ï¸ Execution error: ${err.message}`);
+        ctx.reply(`Execution error: ${err.message}`);
       }
     }
   });
 
-  if (!process.env.RENDER) {
-    bot.launch().catch(e => console.error(e));
-  }
   return bot;
 }
 
 module.exports = { setupTelegramBot };
-
