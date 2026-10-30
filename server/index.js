@@ -1,12 +1,16 @@
-process.on('unhandledRejection', (reason, promise) => { console.error('Unhandled Rejection at:', promise, 'reason:', reason); });
-process.on('uncaughtException', (err) => { console.error('Uncaught Exception:', err); });
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const path = require('path');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('./db');
 const { createAgentTools } = require('./tools');
 const { setupTelegramBot } = require('./telegram');
@@ -18,14 +22,6 @@ const wss = new WebSocketServer({ server });
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
-
-function broadcast(data) {
-  wss.clients.forEach(client => {
-    if (client.readyState === 1) {
-      client.send(JSON.stringify(data));
-    }
-  });
-}
 
 // List connected projects
 app.get('/api/projects', (req, res) => {
@@ -50,15 +46,16 @@ app.get('/api/health', (req, res) => {
 });
 
 const PORT = process.env.PORT || 4000;
-server.listen(PORT, async () => {
+server.listen(PORT, () => {
   console.log(`[Platform Ready] Open http://localhost:${PORT} on your browser or mobile.`);
   
-  // Initialize Telegram Bot
-  const bot = try { setupTelegramBot(); } catch (e) { console.error('Telegram bot init error:', e.message); }
-  if (bot) {
-    // Mount webhook handler
-    app.use(bot.webhookCallback('/telegram-webhook'));
-    console.log('[Telegram Webhook] Listening on /telegram-webhook');
+  try {
+    const bot = setupTelegramBot();
+    if (bot) {
+      app.use(bot.webhookCallback('/telegram-webhook'));
+      console.log('[Telegram Webhook] Listening on /telegram-webhook');
+    }
+  } catch (err) {
+    console.error('[Telegram Init Error]:', err.message);
   }
 });
-
